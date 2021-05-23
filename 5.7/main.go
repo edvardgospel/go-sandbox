@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -37,38 +39,59 @@ func outlineHTML(url string) error {
 }
 
 func forEachNode(n *html.Node, pre, post func(n *html.Node)) {
-	if n.FirstChild == nil {
-		childElement(n)
-	} else {
-		if pre != nil {
-			pre(n)
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			forEachNode(c, pre, post)
-		}
-		if post != nil {
-			post(n)
-		}
+	if pre != nil {
+		pre(n)
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		forEachNode(c, pre, post)
+	}
+	if post != nil {
+		post(n)
 	}
 }
 
 var depth int
 
-func childElement(n *html.Node) {
-	if n.Type == html.ElementNode || n.Type == html.TextNode || n.Type == html.CommentNode {
-		fmt.Printf("%*s<%s/>\n", depth*4, "", n.Data)
+func startElement(n *html.Node) {
+	if n.Type == html.ElementNode {
+		fmt.Printf("%*s<%s", depth*2, "", n.Data)
+		for _, attr := range n.Attr {
+			fmt.Printf(" %v=\"%v\"", attr.Key, attr.Val)
+		}
+		if isSelfClosableTag(n.Data) {
+			fmt.Printf("/>\n")
+		} else {
+			fmt.Printf(">\n")
+		}
+		depth++
+	} else if n.Type == html.CommentNode {
+		fmt.Printf("%*s<!--%s-->\n", depth*2, "", n.Data)
+	} else if n.Type == html.TextNode {
+		re := regexp.MustCompile(`^[ \t]*$`)
+		for _, str := range strings.Split(n.Data, "\n") {
+			if !re.MatchString(str) {
+				fmt.Printf("%*s%s\n", depth*2, "", strings.TrimSpace(str))
+			}
+		}
 	}
 }
 
-func startElement(n *html.Node) {
-	if n.Type == html.ElementNode || n.Type == html.TextNode || n.Type == html.CommentNode {
-		fmt.Printf("%*s<%s %v>\n", depth*4, "", n.Data, n.Attr)
-		depth++
+func endElement(n *html.Node) {
+	if n.Type == html.ElementNode {
+		depth--
+		if !isSelfClosableTag(n.Data) {
+			fmt.Printf("%*s</%s>\n", depth*2, "", n.Data)
+		}
 	}
 }
-func endElement(n *html.Node) {
-	if n.Type == html.ElementNode || n.Type == html.TextNode || n.Type == html.CommentNode {
-		depth--
-		fmt.Printf("%*s</%s>\n", depth*4, "", n.Data)
+
+var closableTags = []string{"area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr"}
+
+func isSelfClosableTag(tagName string) bool {
+	for _, v := range closableTags {
+		if v == tagName {
+			return true
+		}
 	}
+	return false
 }
